@@ -28,9 +28,13 @@
 Для 125Kb/s 8
 */
 #define CAN_PSC 2
-#define CAN_JW  85
+#define CAN_JW  21
 #define CAN_SEG1 63
 #define CAN_SEG2 21
+
+#if CAN_JW > CAN_SEG2
+#error "CAN_JW (SJW) must not exceed CAN_SEG2 (phase segment 2)"
+#endif
 
 #define CAN_STD_FILTER_SFT_RANGE				0
 #define CAN_STD_FILTER_SFT_DUAL					1

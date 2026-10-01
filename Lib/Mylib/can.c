@@ -109,9 +109,10 @@ static void fdcan_init(FDCAN_GlobalTypeDef *CAN, uint8_t can_bauderate){
 	CAN->CCCR   |= FDCAN_CCCR_CCE;     //CCE bit enabled to start configuration
     CAN->CCCR &= ~ (FDCAN_CCCR_FDOE);  //Classic CAN
 
-	// /* Clean-up memory */
-	for(uint32_t i=(uint32_t)fdcan_mem; i < (uint32_t)fdcan_mem + sizeof(struct fdcan_mem_t); i++){
-		*(uint32_t *)i=0;
+	/* Clean-up message RAM */
+	volatile uint32_t *mem = (volatile uint32_t *)&fdcan_mem;
+	for(uint32_t i = 0; i < sizeof(struct fdcan_mem_t) / sizeof(uint32_t); i++){
+			mem[i] = 0;
 	}
 
 	switch (can_bauderate)
@@ -288,7 +289,7 @@ static void fdcan2_filters(void){
 
 	if(ext_filters_count > 0){
 		DEBUG("Apply %d ext filters",ext_filters_count);
-		FDCAN1->RXGFC |= (ext_filters_count << FDCAN_RXGFC_LSE_Pos)|FDCAN_RXGFC_ANFE;
+		FDCAN2->RXGFC |= (ext_filters_count << FDCAN_RXGFC_LSE_Pos)|FDCAN_RXGFC_ANFE;
 	}
 
 	#else
@@ -322,7 +323,7 @@ static void fdcan1_filters(void){
 
 	if(std_filters_count > 0){
 		DEBUG("Apply %d std filters",std_filters_count);
-		FDCAN2->RXGFC = (std_filters_count << FDCAN_RXGFC_LSS_Pos)|FDCAN_RXGFC_ANFS;
+		FDCAN1->RXGFC = (std_filters_count << FDCAN_RXGFC_LSS_Pos)|FDCAN_RXGFC_ANFS;
 	}
 	
 	#else
@@ -337,18 +338,18 @@ void FDCAN1_IT0_IRQHandler(void) {
 	TRACE_ENTER_ISR;
 
 	if((CAN->IR & FDCAN_IR_BO) != 0){
+		/* Clear the flag first, otherwise the IRQ keeps re-firing */
+		CAN->IR = FDCAN_IR_BO;
 		if(CAN->PSR & FDCAN_PSR_BO){
 			#ifdef CAN_DEBUG
 			ERROR("FDCAN1 Enter Bus-off state");
 			#endif
 
+			/* Bus-off sets INIT; clearing it starts recovery (128 x 11 recessive bits) */
 			if( (CAN->CCCR & FDCAN_CCCR_INIT) != 0){
 				CAN->CCCR   &= ~(FDCAN_CCCR_INIT);
-				return;
 			}
 		}
-		CAN->IR = FDCAN_IR_BO;
-		return;
 	}
 
 	if((CAN->IR & FDCAN_IR_RF0N) != 0){
@@ -390,18 +391,18 @@ void FDCAN2_IT0_IRQHandler(void) {
 	TRACE_ENTER_ISR;
 
 	if((CAN->IR & FDCAN_IR_BO) != 0){
+		/* Clear the flag first, otherwise the IRQ keeps re-firing */
+		CAN->IR = FDCAN_IR_BO;
 		if(CAN->PSR & FDCAN_PSR_BO){
 			#ifdef CAN_DEBUG
 			ERROR("FDCAN2 Enter Bus-off state");
 			#endif
 
+			/* Bus-off sets INIT; clearing it starts recovery (128 x 11 recessive bits) */
 			if( (CAN->CCCR & FDCAN_CCCR_INIT) != 0){
 				CAN->CCCR   &= ~(FDCAN_CCCR_INIT);
-				return;
 			}
 		}
-		CAN->IR = FDCAN_IR_BO;
-		return;
 	}
 
 	if((CAN->IR & FDCAN_IR_RF0N) != 0){
@@ -446,18 +447,18 @@ void FDCAN3_IT0_IRQHandler(void) {
 	TRACE_ENTER_ISR;
 
 	if((CAN->IR & FDCAN_IR_BO) != 0){
+		/* Clear the flag first, otherwise the IRQ keeps re-firing */
+		CAN->IR = FDCAN_IR_BO;
 		if(CAN->PSR & FDCAN_PSR_BO){
 			#ifdef CAN_DEBUG
 			ERROR("FDCAN3 Enter Bus-off state");
 			#endif
 
+			/* Bus-off sets INIT; clearing it starts recovery (128 x 11 recessive bits) */
 			if( (CAN->CCCR & FDCAN_CCCR_INIT) != 0){
 				CAN->CCCR   &= ~(FDCAN_CCCR_INIT);
-				return;
 			}
 		}
-		CAN->IR = FDCAN_IR_BO;
-		return;
 	}
 
 	if((CAN->IR & FDCAN_IR_RF0N) != 0){
