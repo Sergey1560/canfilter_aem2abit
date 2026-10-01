@@ -483,22 +483,20 @@ static void aem2abit(struct can_message_t *aem, struct can_message_t *abit){
 	uint16_t aem_lambda;
 	int16_t aem_oxygen;
 	uint16_t abit_lambda;
-	int16_t abit_oxygen;
+	uint16_t abit_oxygen;
 	uint8_t data_valid;
 	uint8_t sensor_fault;
 	
+	/* AEM (doc/aem_30-0310.pdf): big-endian, lambda 0.0001/bit unsigned, O2 0.001 %/bit signed */
 	aem_lambda = (aem->msg[0] << 8)|aem->msg[1];
-    aem_oxygen = (aem->msg[2] << 8)|aem->msg[3];
+	aem_oxygen = (int16_t)((aem->msg[2] << 8)|aem->msg[3]);
 
     data_valid = (aem->msg[6] >> 7) & 1;
 	sensor_fault = (aem->msg[7] >> 6) & 1;
 
-	abit_lambda = aem_lambda / 10;
-	abit_oxygen = aem_oxygen / 10;
-
-    if((aem_lambda % 10) > 4){
-        abit_lambda++;
-    }
+	/* ABIT ADLM 0x211 (doc/abit_adlm.pdf): little-endian, lambda 0.001/bit, O2 0.01 %/bit, both unsigned */
+	abit_lambda = (uint16_t)(((uint32_t)aem_lambda + 5) / 10);
+	abit_oxygen = (aem_oxygen > 0) ? (uint16_t)((aem_oxygen + 5) / 10) : 0;
 
 //    printf("Aem Lambda: %d (0x%04X) Oxy: %d (0x%04X)\nAbt Lambda: %d (0x%04X) Oxy: %d (0x%04X)\n",aem_lambda,aem_lambda,aem_oxygen,aem_oxygen,abit_lambda,abit_lambda,abit_oxygen,abit_oxygen);
 
@@ -514,7 +512,7 @@ static void aem2abit(struct can_message_t *aem, struct can_message_t *abit){
 	abit->msg[2] = abit_oxygen & 0xFF;
 	abit->msg[3] = (abit_oxygen >> 8) & 0xFF;
 
-	abit->msg[7] = data_valid;
+	abit->msg[7] = (data_valid && !sensor_fault) ? 1 : 0;	//bit 0 - sensor ready
 
 	if(data_valid){
 		ws2812b_set_rgb(0, LED_COLOR_GREEN);
