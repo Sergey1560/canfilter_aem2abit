@@ -30,6 +30,7 @@ void led_init(void){
 	TIM6->CNT=0;
 	TIM6->DIER |= TIM_DIER_UIE;
 	TIM6->CR1 |= TIM_CR1_CEN;
+	NVIC_SetPriority(TIM6_DAC_IRQn,7);	//below CAN (5) and LED DMA (6)
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
  }
 
@@ -54,6 +55,7 @@ void led_init(void){
 	TIM7->CNT=0;
 	TIM7->DIER |= TIM_DIER_UIE;
 	TIM7->CR1 |= TIM_CR1_CEN;
+	NVIC_SetPriority(TIM7_DAC_IRQn,7);	//below CAN (5) and LED DMA (6)
 	NVIC_EnableIRQ(TIM7_DAC_IRQn);
 
 

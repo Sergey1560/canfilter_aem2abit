@@ -7,6 +7,10 @@ void RCC_init(void){
 
 	dwt_init();
 
+	//PWR registers are not writable without the PWR clock
+	RCC->APB1ENR1 |= RCC_APB1ENR1_PWREN;
+	(void)RCC->APB1ENR1;
+
 	//Scale 1, boost mode
     PWR->CR5 &= ~PWR_CR5_R1MODE;
     tmp = PWR->CR1;
@@ -42,12 +46,19 @@ void RCC_init(void){
 
 	while((RCC->CR & RCC_CR_PLLRDY) == 0){};
 
+	//Switching above 80MHz: go through AHB /2 and hold it at least 1us (RM0440)
 	tmp = RCC->CFGR;
-	tmp &= ~(RCC_CFGR_SW);
-	tmp |= RCC_CFGR_SW;
+	tmp &= ~(RCC_CFGR_SW|RCC_CFGR_HPRE);
+	tmp |= RCC_CFGR_SW_PLL|RCC_CFGR_HPRE_DIV2;
 	RCC->CFGR = tmp;
 	
-	while((RCC->CFGR & RCC_CFGR_SWS) != (RCC_CFGR_SWS)) {};
+	while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) {};
+
+	//170 cycles is >= 1us at any HCLK up to 170MHz
+	tmp = dwt_get_tick();
+	while(dwt_get_diff_tick(tmp) < 170){};
+
+	RCC->CFGR &= ~RCC_CFGR_HPRE;
 
 	SystemCoreClockUpdate();
 

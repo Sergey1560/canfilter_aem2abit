@@ -40,8 +40,8 @@ void ws2812b_init(void){
     TIM8->BDTR |= TIM_BDTR_MOE;
 
     TIM8->CR1 |= 1;
-    NVIC_EnableIRQ(DMA1_Channel1_IRQn);
     NVIC_SetPriority(DMA1_Channel1_IRQn,6);
+    NVIC_EnableIRQ(DMA1_Channel1_IRQn);
     ws2812b_buff_clear();
     ws2812b_send();
 }

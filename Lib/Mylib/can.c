@@ -3,10 +3,10 @@
 #include "led.h"
 #include "ws2812b.h"
 
-const struct fdcan_sram_t *fdcan_sram = (const struct fdcan_sram_t *)(APB1PERIPH_BASE + 0xA400UL);
+volatile struct fdcan_sram_t * const fdcan_sram = (volatile struct fdcan_sram_t *)(APB1PERIPH_BASE + 0xA400UL);
 
 static void get_msg(FDCAN_GlobalTypeDef *CAN, struct can_message_t* msg, uint8_t idx);
-static const struct fdcan_mem_t *get_mem_base_addr(FDCAN_GlobalTypeDef *CAN);
+static volatile struct fdcan_mem_t *get_mem_base_addr(FDCAN_GlobalTypeDef *CAN);
 static void fdcan_init(FDCAN_GlobalTypeDef *CAN, uint8_t can_bauderate);
 
 static void fdcan1_filters(void);
@@ -96,7 +96,7 @@ static void fdcan_init(FDCAN_GlobalTypeDef *CAN, uint8_t can_bauderate){
 
 	DEBUG("Init FDCAN at 0x%0X",(uint32_t)CAN);
 
-	const struct fdcan_mem_t *fdcan_mem = get_mem_base_addr(CAN);
+	volatile struct fdcan_mem_t *fdcan_mem = get_mem_base_addr(CAN);
 
 	if(fdcan_mem == NULL){
 		ERROR("Failed FDCAN mem addr");
@@ -110,7 +110,7 @@ static void fdcan_init(FDCAN_GlobalTypeDef *CAN, uint8_t can_bauderate){
     CAN->CCCR &= ~ (FDCAN_CCCR_FDOE);  //Classic CAN
 
 	/* Clean-up message RAM */
-	volatile uint32_t *mem = (volatile uint32_t *)&fdcan_mem;
+	volatile uint32_t *mem = (volatile uint32_t *)fdcan_mem;
 	for(uint32_t i = 0; i < sizeof(struct fdcan_mem_t) / sizeof(uint32_t); i++){
 			mem[i] = 0;
 	}
@@ -160,21 +160,21 @@ static void fdcan_init(FDCAN_GlobalTypeDef *CAN, uint8_t can_bauderate){
 	if(CAN == FDCAN1){
 		CAN1_ENABLE_IO;
 		CAN1_SILENT_OFF;
-		NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 		NVIC_SetPriority(FDCAN1_IT0_IRQn,5);
+		NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 	}else if(CAN == FDCAN2){
 		CAN2_SILENT_OFF;
-		NVIC_EnableIRQ(FDCAN2_IT0_IRQn);
 		NVIC_SetPriority(FDCAN2_IT0_IRQn,5);
+		NVIC_EnableIRQ(FDCAN2_IT0_IRQn);
 	}else if(CAN == FDCAN3){
-		NVIC_EnableIRQ(FDCAN3_IT0_IRQn);
 		NVIC_SetPriority(FDCAN3_IT0_IRQn,5);
+		NVIC_EnableIRQ(FDCAN3_IT0_IRQn);
 	}else{
 		ERROR("Unknow FDCAN interface 0x%0X",(uint32_t)CAN);
 	}
 }
 
-static const struct fdcan_mem_t *get_mem_base_addr(FDCAN_GlobalTypeDef *CAN){
+static volatile struct fdcan_mem_t *get_mem_base_addr(FDCAN_GlobalTypeDef *CAN){
 	if(CAN == FDCAN1){
 		return &fdcan_sram->fdcan1;
 	}else if(CAN == FDCAN2){
@@ -188,7 +188,7 @@ static const struct fdcan_mem_t *get_mem_base_addr(FDCAN_GlobalTypeDef *CAN){
 }
 
 static void get_msg(FDCAN_GlobalTypeDef *CAN, struct can_message_t* msg, uint8_t idx){
-	const struct fdcan_mem_t *fdcan_mem = get_mem_base_addr(CAN);
+	volatile struct fdcan_mem_t *fdcan_mem = get_mem_base_addr(CAN);
 
 	if(fdcan_mem == NULL){
 		ERROR("Failed FDCAN mem addr");
@@ -200,7 +200,7 @@ static void get_msg(FDCAN_GlobalTypeDef *CAN, struct can_message_t* msg, uint8_t
 		return;
 	}
 
-	struct can_rx_fifo_element_t *fifo = (struct can_rx_fifo_element_t *)&fdcan_mem->rx0_fifo[idx];
+	volatile struct can_rx_fifo_element_t *fifo = &fdcan_mem->rx0_fifo[idx];
 
 	if(fifo->b[0] & CAN_29BIT_FLAG){//29bit ID
 		msg->ext_id = 1;
@@ -219,7 +219,7 @@ static void get_msg(FDCAN_GlobalTypeDef *CAN, struct can_message_t* msg, uint8_t
 }
 
 int can_send(FDCAN_GlobalTypeDef *CAN, struct can_message_t *msg){
-	const struct fdcan_mem_t *fdcan_mem = get_mem_base_addr(CAN);
+	volatile struct fdcan_mem_t *fdcan_mem = get_mem_base_addr(CAN);
 
 	if(fdcan_mem == NULL){
 		ERROR("Failed FDCAN mem addr");
@@ -244,7 +244,7 @@ int can_send(FDCAN_GlobalTypeDef *CAN, struct can_message_t *msg){
 		return -1;
 	}
 
-	struct can_tx_fifo_element_t *fifo = (struct can_tx_fifo_element_t *)&fdcan_mem->can_tx_fifo[tx_index];
+	volatile struct can_tx_fifo_element_t *fifo = &fdcan_mem->can_tx_fifo[tx_index];
 
 	if(msg->ext_id == 1){//29bit
 		fifo->b[0] = CAN_29BIT_FLAG|(msg->id & 0x1FFFFFFF);
@@ -259,7 +259,7 @@ int can_send(FDCAN_GlobalTypeDef *CAN, struct can_message_t *msg){
 	fifo->b[2] = *ptr++;
 	fifo->b[3] = *ptr;
 
-	CAN->TXBAR |= (1 << tx_index);
+	CAN->TXBAR = (1UL << tx_index);
 	return 0;   
 }
 
@@ -267,7 +267,7 @@ static void fdcan2_filters(void){
 
 	#ifdef CAN2_FILTERS
 	struct can_ext_filter_element_t ext_filter_element = {0};
-	uint32_t *ext_filter = (uint32_t *)&fdcan_sram->fdcan2.ext_filter;
+	volatile uint32_t *ext_filter = (volatile uint32_t *)&fdcan_sram->fdcan2.ext_filter;
 
 	ext_filter_element.efid1 = AEM_CANID & 0x1FFFFFFF;
 	ext_filter_element.efid2 = AEM_CANID & 0x1FFFFFFF;
@@ -279,7 +279,7 @@ static void fdcan2_filters(void){
 	*ext_filter++ = ext_filter_element.b0_value;
 	*ext_filter++ = ext_filter_element.b1_value;
 
-	uint32_t ext_filters_count = ((ext_filter - (uint32_t *)&fdcan_sram->fdcan2.ext_filter) * sizeof(ext_filter)) / sizeof(struct can_ext_filter_element_t);
+	uint32_t ext_filters_count = ((ext_filter - (volatile uint32_t *)&fdcan_sram->fdcan2.ext_filter) * sizeof(*ext_filter)) / sizeof(struct can_ext_filter_element_t);
 	DEBUG("Total ext filters: %d",ext_filters_count);
 
 	if(ext_filters_count > 8){
@@ -287,13 +287,16 @@ static void fdcan2_filters(void){
 		ext_filters_count = 8;
 	};
 
+	/* AEM bus: standard and remote frames are not used */
+	FDCAN2->RXGFC = FDCAN_RXGFC_ANFS|FDCAN_RXGFC_RRFS|FDCAN_RXGFC_RRFE;
+
 	if(ext_filters_count > 0){
 		DEBUG("Apply %d ext filters",ext_filters_count);
 		FDCAN2->RXGFC |= (ext_filters_count << FDCAN_RXGFC_LSE_Pos)|FDCAN_RXGFC_ANFE;
 	}
 
 	#else
-	FDCAN1->RXGFC = 0;
+	FDCAN2->RXGFC = 0;
 	#endif
 }
 
@@ -302,7 +305,7 @@ static void fdcan1_filters(void){
 	#ifdef CAN1_FILTERS
 
 	struct std_filter_t filter_element = {0};
-	uint32_t *filter = (uint32_t *)&fdcan_sram->fdcan1.std_filter;
+	volatile uint32_t *filter = (volatile uint32_t *)&fdcan_sram->fdcan1.std_filter;
 
 	filter_element.sfid1 = 0;
 	filter_element.sfid2 =  0x7FF;
@@ -313,7 +316,7 @@ static void fdcan1_filters(void){
 	#endif
 	*filter++ = filter_element.value;
 
-	uint32_t std_filters_count = ((filter - (uint32_t *)&fdcan_sram->fdcan1.std_filter) * sizeof(filter)) / sizeof(struct std_filter_t);
+	uint32_t std_filters_count = ((filter - (volatile uint32_t *)&fdcan_sram->fdcan1.std_filter) * sizeof(*filter)) / sizeof(struct std_filter_t);
 	DEBUG("Total std filters: %d",std_filters_count);
 
 	if(std_filters_count > 28){
@@ -321,13 +324,16 @@ static void fdcan1_filters(void){
 		std_filters_count = 28;
 	};
 
+	/* ABIT bus: extended frames are not used */
+	FDCAN1->RXGFC = FDCAN_RXGFC_ANFE;
+
 	if(std_filters_count > 0){
 		DEBUG("Apply %d std filters",std_filters_count);
-		FDCAN1->RXGFC = (std_filters_count << FDCAN_RXGFC_LSS_Pos)|FDCAN_RXGFC_ANFS;
+		FDCAN1->RXGFC |= (std_filters_count << FDCAN_RXGFC_LSS_Pos)|FDCAN_RXGFC_ANFS;
 	}
 	
 	#else
-	FDCAN2->RXGFC = 0;
+	FDCAN1->RXGFC = 0;
 	#endif
 }
 
@@ -352,33 +358,26 @@ void FDCAN1_IT0_IRQHandler(void) {
 		}
 	}
 
-	if((CAN->IR & FDCAN_IR_RF0N) != 0){
-		CAN->IR = FDCAN_IR_RF0N;
-		rx_index= (uint8_t)((CAN->RXF0S >> 8) & 0x3);
-	
-		get_msg(CAN, &msg, rx_index);
-		#ifdef CAN_DEBUG
-		//DEBUG("CAN1 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
-		#endif
-		CAN->RXF0A = rx_index;
+	if((CAN->IR & FDCAN_IR_RF0F) != 0){
+		WARNING("CAN1 RX IRQ FIFO full");
 	};
-	
+
+	if((CAN->IR & (FDCAN_IR_RF0N|FDCAN_IR_RF0F)) != 0){
+		/* Clear before draining: a frame arriving during the loop re-raises the IRQ */
+		CAN->IR = FDCAN_IR_RF0N|FDCAN_IR_RF0F;
+		while(CAN->RXF0S & FDCAN_RXF0S_F0FL_Msk){
+			rx_index= (uint8_t)((CAN->RXF0S >> FDCAN_RXF0S_F0GI_Pos) & 0x3);
+			get_msg(CAN, &msg, rx_index);
+			CAN->RXF0A = rx_index;
+			#ifdef CAN_DEBUG
+			//DEBUG("CAN1 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
+			#endif
+		}
+	};
+
 	if((CAN->IR & FDCAN_IR_RF0L) != 0){
 			CAN->IR = FDCAN_IR_RF0L;
 			WARNING("CAN1 RX IRQ, lost message");
-	};
-
-	if((CAN->IR & FDCAN_IR_RF0F) != 0){
-			WARNING("CAN1 RX IRQ FIFO full");
-			while(CAN->RXF0S & FDCAN_RXF0S_F0FL_Msk){
-				rx_index= (uint8_t)((CAN->RXF0S >> 8) & 0x03);
-				get_msg(CAN,&msg,rx_index);
-				#ifdef CAN_DEBUG
-				DEBUG("CAN1 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
-				#endif
-				CAN->RXF0A = rx_index;
-			}
-			CAN->IR = FDCAN_IR_RF0F;
 	};
 
 	TRACE_EXIT_ISR;
@@ -405,36 +404,30 @@ void FDCAN2_IT0_IRQHandler(void) {
 		}
 	}
 
-	if((CAN->IR & FDCAN_IR_RF0N) != 0){
-		CAN->IR = FDCAN_IR_RF0N;
-		rx_index= (uint8_t)((CAN->RXF0S >> 8) & 0x3);
-	
-		get_msg(CAN, &msg, rx_index);
-		#ifdef CAN_DEBUG
-		//DEBUG("CAN2 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
-		#endif
-		aem2abit(&msg,&abit);
-		can_send(FDCAN1,&abit);
-
-		CAN->RXF0A = rx_index;
+	if((CAN->IR & FDCAN_IR_RF0F) != 0){
+		WARNING("CAN2 RX IRQ FIFO full");
 	};
-	
+
+	if((CAN->IR & (FDCAN_IR_RF0N|FDCAN_IR_RF0F)) != 0){
+		/* Clear before draining: a frame arriving during the loop re-raises the IRQ */
+		CAN->IR = FDCAN_IR_RF0N|FDCAN_IR_RF0F;
+		while(CAN->RXF0S & FDCAN_RXF0S_F0FL_Msk){
+			rx_index= (uint8_t)((CAN->RXF0S >> FDCAN_RXF0S_F0GI_Pos) & 0x3);
+			get_msg(CAN, &msg, rx_index);
+			CAN->RXF0A = rx_index;
+			#ifdef CAN_DEBUG
+			//DEBUG("CAN2 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
+			#endif
+			if(msg.ext_id && (msg.id == AEM_CANID) && (msg.len == 8)){
+				aem2abit(&msg,&abit);
+				can_send(FDCAN1,&abit);
+			}
+		}
+	};
+
 	if((CAN->IR & FDCAN_IR_RF0L) != 0){
 			CAN->IR = FDCAN_IR_RF0L;
 			WARNING("CAN2 RX IRQ, lost message");
-	};
-
-	if((CAN->IR & FDCAN_IR_RF0F) != 0){
-			WARNING("CAN2 RX IRQ FIFO full");
-			while(CAN->RXF0S & FDCAN_RXF0S_F0FL_Msk){
-				rx_index= (uint8_t)((CAN->RXF0S >> 8) & 0x03);
-				get_msg(CAN,&msg,rx_index);
-				#ifdef CAN_DEBUG
-				DEBUG("CAN2 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
-				#endif
-				CAN->RXF0A = rx_index;
-			}
-			CAN->IR = FDCAN_IR_RF0F;
 	};
 
 	TRACE_EXIT_ISR;
@@ -461,33 +454,26 @@ void FDCAN3_IT0_IRQHandler(void) {
 		}
 	}
 
-	if((CAN->IR & FDCAN_IR_RF0N) != 0){
-		CAN->IR = FDCAN_IR_RF0N;
-		rx_index= (uint8_t)((CAN->RXF0S >> 8) & 0x3);
-	
-		get_msg(CAN, &msg, rx_index);
-		#ifdef CAN_DEBUG
-		DEBUG("CAN3 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
-		#endif
-		CAN->RXF0A = rx_index;
+	if((CAN->IR & FDCAN_IR_RF0F) != 0){
+		WARNING("CAN3 RX IRQ FIFO full");
 	};
-	
+
+	if((CAN->IR & (FDCAN_IR_RF0N|FDCAN_IR_RF0F)) != 0){
+		/* Clear before draining: a frame arriving during the loop re-raises the IRQ */
+		CAN->IR = FDCAN_IR_RF0N|FDCAN_IR_RF0F;
+		while(CAN->RXF0S & FDCAN_RXF0S_F0FL_Msk){
+			rx_index= (uint8_t)((CAN->RXF0S >> FDCAN_RXF0S_F0GI_Pos) & 0x3);
+			get_msg(CAN, &msg, rx_index);
+			CAN->RXF0A = rx_index;
+			#ifdef CAN_DEBUG
+			DEBUG("CAN3 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
+			#endif
+		}
+	};
+
 	if((CAN->IR & FDCAN_IR_RF0L) != 0){
 			CAN->IR = FDCAN_IR_RF0L;
 			WARNING("CAN3 RX IRQ, lost message");
-	};
-
-	if((CAN->IR & FDCAN_IR_RF0F) != 0){
-			WARNING("CAN3 RX IRQ FIFO full");
-			while(CAN->RXF0S & FDCAN_RXF0S_F0FL_Msk){
-				rx_index= (uint8_t)((CAN->RXF0S >> 8) & 0x03);
-				get_msg(CAN,&msg,rx_index);
-				#ifdef CAN_DEBUG
-				DEBUG("CAN3 msg ID(%d): 0x%0X  %0X:%0X:%0X:%0X:%0X:%0X:%0X:%0X",msg.ext_id,msg.id,msg.msg[0],msg.msg[1],msg.msg[2],msg.msg[3],msg.msg[4],msg.msg[5],msg.msg[6],msg.msg[7]);
-				#endif
-				CAN->RXF0A = rx_index;
-			}
-			CAN->IR = FDCAN_IR_RF0F;
 	};
 
 	TRACE_EXIT_ISR;
